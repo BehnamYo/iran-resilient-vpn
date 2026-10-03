@@ -1,0 +1,43 @@
+name: Resilient Android
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify and extract reviewed source
+        run: |
+          echo 'ba915a32215f3bcc8cbd2d074db9e4d6eeca8d394dee932305f40e7e7fedcef0  resilient-source.tar.gz' | sha256sum --check
+          mkdir app
+          tar -xzf resilient-source.tar.gz -C app
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install pinned Flutter and Android components
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsqlite3-dev
+          git clone --filter=blob:none https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          git -C "$RUNNER_TEMP/flutter" checkout f6ff1529fd6d8af5f706051d9251ac9231c83407
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-33' 'platforms;android-34' 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Test and sign
+        working-directory: app
+        env:
+          RESILIENT_SOURCE_ARCHIVE: ${{ github.workspace }}/resilient-source.tar.gz
+          RESILIENT_KEYSTORE_BASE64: ${{ secrets.RESILIENT_KEYSTORE_BASE64 }}
+          RESILIENT_KEY_PASSWORD: ${{ secrets.RESILIENT_KEY_PASSWORD }}
+          RESILIENT_STORE_PASSWORD: ${{ secrets.RESILIENT_STORE_PASSWORD }}
+        run: bash scripts/resilient-build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Resilient-VPN-arm64
+          path: app/release/
+          if-no-files-found: error
+          retention-days: 30
